@@ -1,0 +1,51 @@
+#!/usr/bin/ruby
+ 
+require 'mcollective'
+
+include MCollective::RPC
+
+
+options = rpcoptions do |parser, options|
+  parser.define_head "f-checkout"
+  parser.banner = "Usage: f-checkout [options] [filters] --repo REPO --tag TAG"
+ 
+  parser.on('-r', '--repo REPO', 'Repo to use') do |v|
+    options[:repo] = v
+  end
+
+  parser.on('-t', '--tag TAG', 'Tag to checkout') do |v|
+    options[:tag] = v
+  end
+end
+ 
+unless options.include?(:repo)
+  puts("You need to specify a repo with --repo")
+  exit! 1
+end
+
+unless options.include?(:tag)
+  puts("You need to specify a tag with --tag")
+  exit! 1
+end
+
+request_id = Digest::MD5.hexdigest options[:repo] + " " + options[:tag] + " " + "#{Time.now.to_i}"
+ 
+mc = rpcclient('gitagent', :options => options)
+
+nodelist = mc.discover
+
+puts '(Nearly) LB-aware deploy\n\n'
+
+nodelist.each do |node|
+  puts "\n== #{node} ==\n"
+  mc.custom_request("git_checkout",{:repo => options[:repo],:tag => options[:tag]}, "#{node}", {"identity" => "#{node}"}).each do |out|
+    puts "\n#{out[:sender]} #{out[:data][:detail]}\n\n" if out[:data][:detail]
+    puts "#{out[:sender]} Pre-deploy script #{out[:data][:trub1]}:\n#{out[:data][:prerr]}\n#{out[:data][:prout]}\nExitcode: #{out[:data][:prstat]}\n\n"
+    puts "#{out[:sender]} Update site #{out[:data][:lsit]} to tag #{@tag} from repo #{out[:data][:lrep]}:\n#{out[:data][:derr]}\n#{out[:data][:dout]}Exitcode: #{out[:data][:dstat]}\n\n" if out[:data][:prstat] == 0
+    puts "#{out[:sender]} Post-deploy script #{out[:data][:trub2]}:\n#{out[:data][:poerr]}\n#{out[:data][:poout]}\nExitcode: #{out[:data][:postat]}\n" if out[:data][:dstat] == 0
+  end
+end
+
+printrpcstats
+
+mc.disconnect

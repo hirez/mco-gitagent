@@ -1,0 +1,55 @@
+#!/usr/bin/ruby
+ 
+require 'mcollective'
+
+include MCollective::RPC
+
+
+options = rpcoptions do |parser, options|
+	parser.define_head "Gitmangler"
+	parser.banner = "Usage: gitmangle [options] [filters] --repo REPO"
+ 
+	parser.on('-r', '--repo REPO', 'Repo to mangle') do |v|
+		options[:repo] = v
+	end
+
+	parser.on('-s', '--site SITE', 'Site containing repo') do |v|
+		options[:site] = v
+	end
+end
+ 
+unless options.include?(:repo)
+	puts("You need to specify a repo with --repo")
+	exit! 1
+end
+ 
+mc = rpcclient("gitagent", :options => options)
+
+# printrpc mc.git_tag(:repo => options[:repo])
+
+nodelist = mc.discover
+
+nodelist.each do |node|
+  mc.custom_request("git_state",{:repo => options[:repo]}, "#{node}", {"identity" => "#{node}"}) do |spog|
+    begin
+      blep = spog[:body]
+      flem = blep[:data]
+#      puts spog.inspect
+#      puts node
+      rrepo = flem[:lrep]
+      gitrepo = options[:repo]
+      if flem[:tstate] == nil
+        tagdata = blep[:statusmsg] + "\n"
+      else
+        tagdata = flem[:tstate]
+      end
+    rescue Exception => e
+      puts "The agent returned an error: #{e}"
+    end
+    machine = spog[:senderid]
+    puts "\n#{machine}: repo #{gitrepo} (#{rrepo}). Current tag info:\n---\n#{tagdata}---"
+  end
+end
+
+mc.disconnect
+
