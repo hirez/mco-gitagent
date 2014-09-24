@@ -2,8 +2,8 @@ metadata    :name        => "gitagent",
             :description => "Less worse git agent",
             :author      => "JHR",
             :license     => "BSD",
-            :version     => "0.7",
-            :url         => "https://github.com/futureus/deploybot-40k",
+            :version     => "0.8",
+            :url         => "https://github.com/hirez/mco-gitagent",
             :timeout     => 180
 
 action "git_tag", :description => "Retrieve tag and branch info" do
