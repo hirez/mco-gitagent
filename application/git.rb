@@ -17,11 +17,10 @@ class MCollective::Application::Git<MCollective::Application
 
   option  :count,
           :description  => "Number of tags to list",
-          :arguments    => ["-n", "--ntag NUM"],
-          :type         => Fixnum
+          :arguments    => ["-n", "--ntag NUM"]
 
   def main
-    if ARGV.length < 2
+    if ARGV.length != 1
       puts "Please supply a command (list|state|checkout) and a tag or repo"
       puts "Usage: #{@@usage_message}"
       exit! 1
@@ -29,21 +28,24 @@ class MCollective::Application::Git<MCollective::Application
 
     action = ARGV[0]
 
-    mc = rpcclient("gitagent", :options => options)
+    tcount = 10
+    if configuration[:count]
+      tcount = configuration[:count].to_i
+    end
+
+    mc = rpcclient("gitagent",:options => options)
+    nodelist = mc.discover
 
     begin
       case action
       when "list"
-        nodelist = mc.discover
-
-        #puts nodelist.inspect
         nodec = nodelist.count
         tags = Hash.new(0)
         branches = Hash.new(0)
         meng = Hash.new{ |h,k| h[k] = Hash.new(&h.default_proc) }
 
         nodelist.each do |node|
-          mc.custom_request("git_tag",{:repo => configuration[:repo],:count => configuration[:count]}, "#{node}", {"identity" => "#{node}"}) do |spog|
+          mc.custom_request("git_tag",{:repo => configuration[:repo],:count => tcount}, "#{node}", {"identity" => "#{node}"}) do |spog|
             begin
               blep = spog[:body]
               flem = blep[:data]
@@ -86,8 +88,6 @@ class MCollective::Application::Git<MCollective::Application
           puts pob
         end
       when "state"
-        nodelist = mc.discover
-
         nodelist.each do |node|
           mc.custom_request("git_state",{:repo => configuration[:repo]}, "#{node}", {"identity" => "#{node}"}) do |spog|
             begin
@@ -110,8 +110,6 @@ class MCollective::Application::Git<MCollective::Application
           end
         end
       when "checkout"
-        nodelist = mc.discover
-
         nodelist.each do |node|
           puts "\n== #{node} ==\n"
           mc.custom_request("git_checkout",{:repo => configuration[:repo],:tag => configuration[:tag]}, "#{node}", {"identity" => "#{node}"}).each do |out|
@@ -125,7 +123,7 @@ class MCollective::Application::Git<MCollective::Application
         puts "Unknown Action #{action}"
         puts "Usage: #{@@usage_message}"
       end
-    rescue RPCError => e
+    rescue Exception => e
       puts "RPCError: #{e}"
     end
   end
