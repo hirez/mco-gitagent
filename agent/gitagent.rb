@@ -65,14 +65,14 @@ module MCollective
         eventdetail = "git-agent on #{host_name} checked out tag #{tag} from repo #{repo} to target #{site} request id #{rid} type #{sitetype}"
         Log.info(eventdetail)
 
-        stompconfig = "/usr/share/mcollective/plugins/mcollective/agent/git-agent.yaml"
+        stompconfig = '/usr/share/mcollective/plugins/mcollective/agent/git-agent.yaml'
         if File.exists?(stompconfig)
           sconfig = YAML.load_file(stompconfig)
-          stompconnector = sconfig["rserver"] + "?" + sconfig["stomp-options"]
+          stompconnector = sconfig['stompconnector']
 
-          report_topic = sconfig["report-topic"]
           sclient = Stomp::Client.new(stompconnector)
           if sclient
+            report_topic = sconfig["report-topic"]
             sclient.publish("/topic/#{report_topic}",eventdetail, {:subject => "Talking to eventbot"})
             sclient.close
           end
