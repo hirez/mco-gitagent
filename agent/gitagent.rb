@@ -12,7 +12,7 @@ module MCollective
       class GitException<Exception;end;
       
       activate_when do
-        File.exists?("/etc/facts.d/facts.yaml")
+        File.exists?("/etc/facter/facts.d/git_configure.yaml")
       end
 
       def create_id
@@ -83,7 +83,7 @@ module MCollective
       action "git_tag" do
         validate :repo, String
 
-        rconfig = YAML.load_file("/etc/facts.d/facts.yaml")
+        rconfig = YAML.load_file("/etc/facter/facts.d/git_configure.yaml")
         lrepo = rconfig["repo_#{request[:repo]}"]
         reply[:lrep] = lrepo
 
@@ -102,7 +102,7 @@ module MCollective
       action "git_state" do
         validate :repo, String
 
-        rconfig = YAML.load_file("/etc/facts.d/facts.yaml")
+        rconfig = YAML.load_file("/etc/facter/facts.d/git_configure.yaml")
         lrepo = rconfig["repo_#{request[:repo]}"]
         reply[:lrep] = lrepo
 
@@ -119,7 +119,7 @@ module MCollective
 
         create_id if request.data[:request_id] == nil
 
-        rconfig = YAML.load_file("/etc/facts.d/facts.yaml")
+        rconfig = YAML.load_file("/etc/facter/facts.d/git_configure.yaml")
 
         lrepo = rconfig["repo_#{request[:repo]}"]
         lsite = rconfig["sitedir_#{request[:repo]}"]
