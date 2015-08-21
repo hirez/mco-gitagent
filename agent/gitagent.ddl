@@ -2,7 +2,7 @@ metadata    :name        => "gitagent",
             :description => "Less worse git agent",
             :author      => "JHR",
             :license     => "BSD",
-            :version     => "0.10",
+            :version     => "0.11",
             :url         => "https://github.com/hirez/mco-gitagent",
             :timeout     => 180
 

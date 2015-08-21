@@ -3,20 +3,26 @@ module MCollective
     class Gitagent<RPC::Agent
 
       require 'yaml'
-      require 'stomp'
-      require 'syslog'
-      require 'socket'
+      require 'fluent-logger'
+      require 'securerandom'
 
       class CmdException<Exception;end;
       class CmdExecuteException<Exception;end;
       class GitException<Exception;end;
-      
+
       activate_when do
-        File.exists?("/etc/facter/facts.d/git_configure.yaml")
+        File.exists?('/etc/facter/facts.d/git_configure.yaml')
+      end
+
+      def local_log(tag,hash)
+        Fluent::Logger::FluentLogger.open(nil, :host=>'localhost', :port=>24224)
+        Fluent::Logger.post("gitagent.#{tag}", hash)
+        msg = tag + ': ' + hash.inspect
+        Log.info(msg)
       end
 
       def create_id
-        request.data[:request_id] = Digest::MD5.hexdigest request.data[:repo] + " " + request.data[:tag] + " " + "#{Time.now.to_i}"
+        request.data[:request_id] = SecureRandom.uuid
       end
 
       def check_file(file)
@@ -28,26 +34,25 @@ module MCollective
       end
 
       def execute(shellcmd,tag,workdir)
-        out = ""
-        err = ""
+        out = ''
+        err = ''
         status = run("#{shellcmd} -t #{tag}", :stdout => out, :stderr => err, :cwd => workdir, :chomp => true)
-        log = "#{shellcmd} status: #{status} stdout: #{out} stderr: #{err}"
-        Log.info(log)
-        if status != 0
-          raise CmdExecuteException, log
+        log = {'status' => status, 'stdout' => out, 'stderr' => err}
+        local_log('execute',log)
+        unless status == 0
+          raise CmdExecuteException, log.to_s
         else
           return status,out,err
         end
       end
 
       def do_git(repo,sitedir,tag)
-        out = ""
-        err = ""
+        out = ''
+        err = ''
         gitcmd = "cd #{repo} && /usr/bin/git --work-tree=#{sitedir} checkout -f #{tag}"
         status = run("/bin/su - www-data -c \"#{gitcmd}\"", :stdout => out, :stderr => err, :cwd => repo, :chomp => true)
-        log = "git-command #{gitcmd} exited with status: #{status} stdout: #{out} stderr: #{err}"
-        Log.info(log)
-        if status != 0
+        local_log('gitcmd',{'command' => gitcmd, 'status' => status,'stdout' => out, 'stderr' => err})
+        unless status == 0
           raise GitException, log
         else
           return status,out,err
@@ -60,30 +65,10 @@ module MCollective
         File.open(tagfile, 'w') {|f| f.write(ltag) }
       end
 
-      def stomp_log(repo,site,tag,rid,sitetype)
-        host_name = Socket::gethostname
-        eventdetail = "git-agent on #{host_name} checked out tag #{tag} from repo #{repo} to target #{site} request id #{rid} type #{sitetype}"
-        Log.info(eventdetail)
-
-        stompconfig = '/usr/share/mcollective/plugins/mcollective/agent/git-agent.yaml'
-        if File.exists?(stompconfig)
-          sconfig = YAML.load_file(stompconfig)
-          stompconnector = sconfig['stompconnector']
-
-          sclient = Stomp::Client.new(stompconnector)
-          if sclient
-            report_topic = sconfig["report-topic"]
-            sclient.publish("/topic/#{report_topic}",eventdetail, {:subject => "Talking to eventbot"})
-            sclient.close
-          end
-        end
-        return eventdetail
-      end
-
-      action "git_tag" do
+      action 'git_tag' do
         validate :repo, String
 
-        rconfig = YAML.load_file("/etc/facter/facts.d/git_configure.yaml")
+        rconfig = YAML.load_file('/etc/facter/facts.d/git_configure.yaml')
         lrepo = rconfig["repo_#{request[:repo]}"]
         reply[:lrep] = lrepo
 
@@ -93,40 +78,37 @@ module MCollective
           reply[:tstatus] = run("/usr/bin/git for-each-ref --format '%(refname)' --sort=-taggerdate --count=#{count} refs/tags", :stdout => :tout, :stderr => :err, :cwd => lrepo, :chomp => true)
           reply[:bstatus] = run("/usr/bin/git for-each-ref --format '%(refname)' --sort=-committerdate --count=#{count} refs/", :stdout => :bout, :stderr => :err, :cwd => lrepo, :chomp => true)
         else
-          reply[:tstatus] = run("/usr/bin/git tag", :stdout => :tout, :stderr => :err, :cwd => lrepo, :chomp => true)
-          reply[:bstatus] = run("/usr/bin/git branch -a", :stdout => :bout, :stderr => :err, :cwd => lrepo, :chomp => true)
+          reply[:tstatus] = run('/usr/bin/git tag', :stdout => :tout, :stderr => :err, :cwd => lrepo, :chomp => true)
+          reply[:bstatus] = run('/usr/bin/git branch -a', :stdout => :bout, :stderr => :err, :cwd => lrepo, :chomp => true)
         end
       end
-  
-      
-      action "git_state" do
+
+
+      action 'git_state' do
         validate :repo, String
 
-        rconfig = YAML.load_file("/etc/facter/facts.d/git_configure.yaml")
+        rconfig = YAML.load_file('/etc/facter/facts.d/git_configure.yaml')
         lrepo = rconfig["repo_#{request[:repo]}"]
         reply[:lrep] = lrepo
 
-        tagfile = "#{lrepo}/TAG"
-        file = File.open(tagfile, 'r')
-        contents = file.read
-        file.close
+        contents = File.read("#{lrepo}/TAG")
         reply[:tstate] = contents
       end
 
-      action "git_checkout" do
+      action 'git_checkout' do
         validate :repo, String
         validate :tag, String
 
         create_id if request.data[:request_id] == nil
 
-        rconfig = YAML.load_file("/etc/facter/facts.d/git_configure.yaml")
+        rconfig = YAML.load_file('/etc/facter/facts.d/git_configure.yaml')
 
         lrepo = rconfig["repo_#{request[:repo]}"]
         lsite = rconfig["sitedir_#{request[:repo]}"]
         sitetype = rconfig["sitetype_#{request[:repo]}"]
-        wdir = rconfig["controldir_#{request[:repo]}"] 
-        precmd = wdir + "/pre-deploy.sh"
-        postcmd = wdir + "/post-deploy.sh"
+        wdir = rconfig["controldir_#{request[:repo]}"]
+        precmd = wdir + '/pre-deploy.sh'
+        postcmd = wdir + '/post-deploy.sh'
 
         deploy_tag = request[:tag]
 
@@ -135,9 +117,8 @@ module MCollective
         reply[:trub1] = precmd
         reply[:trub2] = postcmd
 
-
-        deploylog = "MC gitagent deploy tag #{deploy_tag} on #{Time.now}"
-        Log.info(deploylog)
+        checkout_log = {'tag' => deploy_tag,'repo' => lrepo,'target' => lsite, 'request' => request[:request_id], 'sitetype' => sitetype}
+        local_log('deploy',checkout_log)
 
         begin
           check_file(precmd)
@@ -146,7 +127,7 @@ module MCollective
           reply[:dstat],reply[:dout],reply[:derr] = do_git(lrepo,lsite,deploy_tag)
           reply[:postat],reply[:poout],reply[:poerr] = execute(postcmd,deploy_tag,wdir)
           write_tag(lrepo,deploy_tag)
-          reply[:detail] = stomp_log(lrepo,lsite,deploy_tag,request[:request_id],sitetype)
+          reply[:detail] = checkout_log.to_s
         rescue CmdException => e
           log = "Script check failed: #{e}"
           reply[:detail] = log
